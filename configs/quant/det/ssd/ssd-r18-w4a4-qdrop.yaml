@@ -2,11 +2,47 @@ num_classes: &num_classes 81
 
 runtime:
   rank_init: true
-  task_names: det
-flip: &flip
-  type: flip
-  kwargs:
-    flip_p: 0.5
+  runner:
+    type: quant
+  task_names: quant_det
+quant:
+  quant_type: ptq
+  deploy_backend: academic
+  cali_batch_size: 8 # 256 / 4(bs) / n(gpus) 
+  tricks:
+    special: [backbone.layer0.0]
+    bit: 8
+  ptq:
+    pattern: block # layer for ada, block for brecq/qdrop
+    scale_lr: 4.0e-5
+    warm_up: 0.25
+    weight: 0.005
+    max_count: 20000
+    b_range: [20, 2]
+    keep_gpu: false
+    round_mode: learned_hard_sigmoid
+    prob: 0.5 # 1. for brecq/ada, 0.5 for qdrop
+  prepare_args:
+    extra_qconfig_dict:
+      w_observer: MSEObserver
+      a_observer: EMAMSEObserver
+      a_fakequantize: QDropFakeQuantize
+      w_fakequantize: AdaRoundFakeQuantize
+      w_qscheme:
+        bit: 4
+        symmetry: false
+        per_channel: true
+        pot_scale: false
+        p: 2.4
+      a_qscheme:
+        bit: 4
+        symmetry: false
+        per_channel: false
+        pot_scale: false
+        p: 2.4
+    leaf_module: [Space2Depth, FrozenBatchNorm2d]
+    extra_quantizer_dict:
+      additional_module_type: [ConvFreezebn2d, ConvFreezebnReLU2d]
 
 ## SSD input is fix 300*300
 #resize:
@@ -70,8 +106,7 @@ dataset: # Required.
           kwargs:
             image_dir: /root/coco/train2017
             color_mode: RGB
-        transformer: [*stitch_expand, *crop, *flip, *color_jitter, *fix_output_resize,
-          *to_tensor, *normalize]
+        transformer: [*fix_output_resize, *to_tensor, *normalize]
   test:
     dataset:
       type: coco
@@ -94,7 +129,7 @@ dataset: # Required.
       sampler:
         type: dist
         kwargs: {}
-      batch_size: 16
+      batch_size: 4
       aspect_grouping: [1]
   dataloader:
     type: base
@@ -105,31 +140,30 @@ dataset: # Required.
 
 
 trainer: # Required.
-  max_epoch: 100             # total epochs for the training
-  test_freq: 10
-  save_freq: 10
+  max_epoch: 6             # total epochs for the training
+  test_freq: 1
+  save_freq: 1
   optimizer:                 # optimizer = SGD(params,lr=0.001,momentum=0.9,weight_decay=0.0001)
     type: SGD
     kwargs:
-      lr: 0.000625
+      lr: 0.00000625
       momentum: 0.9
-      weight_decay: 0.0001
+      weight_decay: 0.0
   lr_scheduler:              # lr_scheduler = MultStepLR(optimizer, milestones=[9,14],gamma=0.1)
-    warmup_epochs: 2        # set to be 0 to disable warmup. When warmup,  target_lr = init_lr * total_batch_size
+    warmup_epochs: 0        # set to be 0 to disable warmup. When warmup,  target_lr = init_lr * total_batch_size
     warmup_type: linear
     warmup_ratio: 0.001
     type: MultiStepLR
     kwargs:
-      milestones: [70, 90]     # epochs to decay lr
+      milestones: [2, 4]     # epochs to decay lr
       gamma: 0.1             # decay rate
 
 saver: # Required.
-  #save_dir: /root/save_dir/ret18
-  #results_dir: /root/results_dir/ret18
-  save_dir: /root/save_dir/ret18_t2
-  results_dir: /root/results_dir/ret18_t2
-  pretrain_model: /root/.cache/torch/hub/checkpoints/resnet18-5c106cde.pth 
-  auto_resume: true  # find last checkpoint from save_dir and resume from it automatically
+  save_dir: /root/save_dir/ret18_quant    # dir to save checkpoints
+  #pretrain_model: /root/.cache/torch/hub/checkpoints/resnet18-5c106cde.pth 
+  pretrain_model: /root/save_dir/ret18/ckpt_e100.pth
+  results_dir: /root/results_dir/ret18_quant  # dir to save detection results. i.e., bboxes, masks, keypoints
+  auto_resume: false  # find last checkpoint from save_dir and resume from it automatically
                      # this option has the highest priority (auto_resume > opts > resume_model > pretrain_model)
 
 
@@ -144,7 +178,7 @@ net:
     out_layers: [2, 3, 4]       # layer2...4, commonly named Conv3...5
     out_strides: [8, 16, 32]    # tell the strides of output features
     normalize:
-      type: solo_bn
+      type: mqbench_freeze_bn
     initializer:
       method: msra
 - name: neck
@@ -158,7 +192,7 @@ net:
     initializer:
       method: xavier
     normalize:
-      type: solo_bn
+      type: mqbench_freeze_bn
 - name: roi_head
   prev: neck
   type: SSDHeader
@@ -171,7 +205,7 @@ net:
     num_anchors: [4, 6, 6, 6, 4, 4]
     num_level: 6
     normalize:
-      type: solo_bn
+      type: mqbench_freeze_bn
 - name: post_process
   prev: roi_head
   type: ssd_post

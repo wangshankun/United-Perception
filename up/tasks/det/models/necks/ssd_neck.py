@@ -86,11 +86,20 @@ class SSDNeck(nn.Module):
             }
         """
         features = input['features']
-        x = features[-1] #backbone_last_layer_out
+        x0 = features[0]
+        x1 = features[1]
+        x2 = features[2] #backbone_last_layer_out
 
+        features = []
+
+        features.append(x0)
+        features.append(x1)
+        features.append(x2)
+
+        out = x2
         for idx in range(self.extern_level):
-            x = self.get_extern(idx * 2 + 1)(self.get_extern(idx * 2)(x))
-            features.append(x)
+            out = self.get_extern(idx * 2 + 1)(self.get_extern(idx * 2)(out))
+            features.append(out)
 
         return {'features': features, 'strides': self.get_outstrides()}
 

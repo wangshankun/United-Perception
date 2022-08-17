@@ -8,20 +8,19 @@ flip: &flip
   kwargs:
     flip_p: 0.5
 
-## SSD input is fix 300*300
-#resize:
-#  type: keep_ar_resize
-#  kwargs:
-#    scales: [120, 150, 180, 210, 240, 270]
-#    max_size: 300
-#    separate_wh: true
+resize:
+  type: keep_ar_resize
+  kwargs:
+    scales: [120, 150, 180, 210, 240, 270]
+    max_size: 300
+    separate_wh: true
 
-#test_resize: &test_resize
-#  type: keep_ar_resize
-#  kwargs:
-#    scales: [300]
-#    max_size: 300
-#    separate_wh: true
+test_resize: &test_resize
+  type: keep_ar_resize
+  kwargs:
+    scales: [300]
+    max_size: 300
+    separate_wh: true
 
 fix_output_resize: &fix_output_resize
   type: fix_output_resize
@@ -82,7 +81,7 @@ dataset: # Required.
           kwargs:
             image_dir: /root/coco/val2017
             color_mode: RGB
-        transformer: [*fix_output_resize, *to_tensor, *normalize]
+        transformer: [*test_resize, *to_tensor, *normalize]
         evaluator:
           type: COCO               # choices = {'COCO', 'VOC', 'MR'}
           kwargs:
@@ -126,8 +125,8 @@ trainer: # Required.
 saver: # Required.
   #save_dir: /root/save_dir/ret18
   #results_dir: /root/results_dir/ret18
-  save_dir: /root/save_dir/ret18_t2
-  results_dir: /root/results_dir/ret18_t2
+  save_dir: /root/save_dir/ret18_t1
+  results_dir: /root/results_dir/ret18_t1
   pretrain_model: /root/.cache/torch/hub/checkpoints/resnet18-5c106cde.pth 
   auto_resume: true  # find last checkpoint from save_dir and resume from it automatically
                      # this option has the highest priority (auto_resume > opts > resume_model > pretrain_model)
