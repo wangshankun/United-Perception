@@ -16,4 +16,7 @@ python setup.py build_ext -i
 #执行ssd网络训练
 python -u -m up train --ng=2 --nm=1 --launch=pytorch --config=configs/det/ssd/ssd-r18-300.yaml --display=100
 
+#执行ssd网络量化
+python -u -m up train --ng=2 --nm=1 --launch=pytorch --config=configs/quant/det/ssd/ssd-r18-w4a4-qdrop.yaml --display=100
+
 ```
