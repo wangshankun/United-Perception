@@ -13,7 +13,7 @@ __all__ = ['QuantRunner']
 @RUNNER_REGISTRY.register("quant")
 class QuantRunner(BaseRunner):
     def __init__(self, config, work_dir='./', training=True):
-        self.do_calib = True
+        self.do_calib = False
         super(QuantRunner, self).__init__(config, work_dir, training)
 
     def build(self):
@@ -274,7 +274,8 @@ class QuantRunner(BaseRunner):
         from mqbench.advanced_ptq import ptq_reconstruction
         from easydict import EasyDict
         self.model.train()
-        self.model = ptq_reconstruction(self.model, cali_data, EasyDict(self.config['quant']['ptq']), self.model_list)
+        #self.model = ptq_reconstruction(self.model, cali_data, EasyDict(self.config['quant']['ptq']), self.model_list)
+        self.model = ptq_reconstruction(self.model.module, cali_data, EasyDict(self.config['quant']['ptq']), self.model_list)
         self.save_ptq()
         self.eval_quant()
 

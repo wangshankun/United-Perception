@@ -37,7 +37,7 @@ class BaseNet(nn.Module):
 
     def forward(self, input):
         features = input['features']
-        assert len(features) == self.num_level
+        #assert len(features) == self.num_level
         mlvl_raw_preds = [self.forward_net(features[lvl], lvl) for lvl in range(self.num_level)]
         output = {}
         output['preds'] = mlvl_raw_preds

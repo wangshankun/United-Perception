@@ -31,7 +31,7 @@ quant:
       w_qscheme:
         bit: 4
         symmetry: false
-        per_channel: true
+        per_channel: false
         pot_scale: false
         p: 2.4
       a_qscheme:
