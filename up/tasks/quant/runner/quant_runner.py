@@ -13,7 +13,8 @@ __all__ = ['QuantRunner']
 @RUNNER_REGISTRY.register("quant")
 class QuantRunner(BaseRunner):
     def __init__(self, config, work_dir='./', training=True):
-        self.do_calib = False
+        self.do_calib = True
+        self.do_eval  = False
         super(QuantRunner, self).__init__(config, work_dir, training)
 
     def build(self):
@@ -178,9 +179,10 @@ class QuantRunner(BaseRunner):
             self.model(batch)
         enable_quantization(self.model)
         self.sync_quant_params()
-        logger.info('eval the calib model')
-        self.eval_quant()
-        self.save_calib()
+        if self.do_eval:
+            logger.info('eval the calib model')
+            self.eval_quant()
+            self.save_calib()
 
     def sync_quant_params(self):
         logger.info('start quant params reduce')
