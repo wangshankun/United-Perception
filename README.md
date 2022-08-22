@@ -19,4 +19,7 @@ python -u -m up train --ng=2 --nm=1 --launch=pytorch --config=configs/det/ssd/ss
 #执行ssd网络量化
 python -u -m up train --ng=2 --nm=1 --launch=pytorch --config=configs/quant/det/ssd/ssd-r18-w4a4-qdrop.yaml --display=100
 
+#导出量化模型
+python -u -m up quant_deploy --config=configs/quant/det/ssd/ssd-r18-w4a4-qdrop-deploy.yaml 
+
 ```
