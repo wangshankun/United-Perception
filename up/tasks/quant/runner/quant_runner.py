@@ -6,6 +6,7 @@ from up.utils.general.log_helper import default_logger as logger
 from up.utils.general.cfg_helper import format_cfg
 from up.utils.env.dist_helper import get_world_size, allreduce
 from mqbench.utils.state import enable_quantization, enable_calibration_woquantization
+from torch.nn.parallel import DistributedDataParallel as DDP
 from up.utils.general.global_flag import DEPLOY_FLAG
 import torch
 
@@ -30,6 +31,7 @@ class QuantRunner(BaseRunner):
         self.load_ckpt()
         if self.training:
             self.resume_model_from_fp()
+            self.deploy("fp32_")
             self.quantize_model()
             self.build_trainer()
             self.resume_model_from_quant()
@@ -45,15 +47,19 @@ class QuantRunner(BaseRunner):
         if not self.args.get('no_running_config', False):
             logger.info('Running with config:\n{}'.format(format_cfg(self.config)))
 
-    def deploy(self):
+    def deploy(self, prefix_name = ""):
         #torch.backends.cudnn.enabled=False
         self.model.cuda().eval()
         DEPLOY_FLAG.flag = False
         self.build_dataloaders()
         self.build_hooks()
+
         batch = self.get_batch('test')
+
+        print(batch)
         output = self.model(batch)
         self.dummy_input = {k: v for k, v in output.items() if torch.is_tensor(v)}
+        print(self.dummy_input)
         DEPLOY_FLAG.flag = True
 
         from mqbench.convert_deploy import convert_deploy
@@ -62,10 +68,27 @@ class QuantRunner(BaseRunner):
         print('ONNX input shape is: ', self.dummy_input['image'].shape)
 
         for index, mname in enumerate(self.model_list):
-            mod = getattr(self.model, mname)
+            if isinstance(self.model, DDP):
+                mod = getattr(self.model.module, mname)
+            else:
+                mod = getattr(self.model, mname)
             print('{}/{} model will be exported.'.format(index + 1, len(self.model_list)))
             print('Model name is : ', mname)
-            print()
+
+            if len(prefix_name) != 0:##default using save original fp32 model
+                mname = prefix_name + mname
+                model_file = mname + ".onnx"
+                torch.onnx.export(mod, batch, model_file,
+                                  do_constant_folding=True,
+                                  export_params=True,
+                                  verbose=True,
+                                  opset_version=13)
+
+                import onnx
+                from onnx import shape_inference
+                onnx_model = onnx.load(model_file)
+                onnx.save(onnx.shape_inference.infer_shapes(onnx_model), model_file)
+
             convert_deploy(model=mod,
                            backend_type=self.backend_type[deploy_backend],
                            dummy_input=self.dummy_input,

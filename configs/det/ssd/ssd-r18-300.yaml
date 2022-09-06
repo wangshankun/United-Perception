@@ -27,7 +27,7 @@ fix_output_resize: &fix_output_resize
   type: fix_output_resize
   kwargs:
     scales: [300, 300]
-    max_size: 320
+    max_size: 300
 
 expand: &stitch_expand
   type: stitch_expand

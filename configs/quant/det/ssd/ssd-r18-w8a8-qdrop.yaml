@@ -29,14 +29,14 @@ quant:
       a_fakequantize: QDropFakeQuantize
       w_fakequantize: AdaRoundFakeQuantize
       w_qscheme:
-        bit: 4
-        symmetry: false
+        bit: 8
+        symmetry: true
         per_channel: true
         pot_scale: false
         p: 2.4
       a_qscheme:
-        bit: 4
-        symmetry: false
+        bit: 8
+        symmetry: true
         per_channel: false
         pot_scale: false
         p: 2.4
@@ -63,7 +63,7 @@ fix_output_resize: &fix_output_resize
   type: fix_output_resize
   kwargs:
     scales: [300, 300]
-    max_size: 320
+    max_size: 300
 
 expand: &stitch_expand
   type: stitch_expand
@@ -129,7 +129,7 @@ dataset: # Required.
       sampler:
         type: dist
         kwargs: {}
-      batch_size: 4
+      batch_size: 1
       aspect_grouping: [1]
   dataloader:
     type: base

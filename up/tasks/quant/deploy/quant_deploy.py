@@ -29,6 +29,7 @@ class QuantDeploy(QuantRunner):
         self.model.load_state_dict(self.ckpt['model'])
 
     def get_onnx_dummy_input(self):
+        torch.backends.cudnn.enabled=False
         self.model.cuda().eval()
         DEPLOY_FLAG.flag = False
         self.build_dataloaders()
