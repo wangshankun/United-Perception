@@ -307,9 +307,7 @@ class SSDAnchorGenerator(BoxAnchorGenerator):
             indices.insert(1, len(indices))
             base_anchors = torch.index_select(base_anchors, 0,
                                                   torch.LongTensor(indices))
-            print(base_anchors)
             base_anchors = base_anchors.numpy()
-            print(base_anchors)
             self._num_anchors.append(len(base_anchors))
             self._base_anchors.append(base_anchors)
         return self._base_anchors

@@ -56,10 +56,11 @@ class QuantRunner(BaseRunner):
 
         batch = self.get_batch('test')
 
-        print(batch)
+        #dummy_input = torch.ones((1, 3, 300,300)).to(device='cuda')
+        #batch['image'] = dummy_input #change input shape
+
         output = self.model(batch)
         self.dummy_input = {k: v for k, v in output.items() if torch.is_tensor(v)}
-        print(self.dummy_input)
         DEPLOY_FLAG.flag = True
 
         from mqbench.convert_deploy import convert_deploy
@@ -88,11 +89,11 @@ class QuantRunner(BaseRunner):
                 from onnx import shape_inference
                 onnx_model = onnx.load(model_file)
                 onnx.save(onnx.shape_inference.infer_shapes(onnx_model), model_file)
-
-            convert_deploy(model=mod,
-                           backend_type=self.backend_type[deploy_backend],
-                           dummy_input=self.dummy_input,
-                           model_name=mname)
+            else:
+                convert_deploy(model=mod,
+                               backend_type=self.backend_type[deploy_backend],
+                               dummy_input=self.dummy_input,
+                               model_name=mname)
 
     def build_model(self):
         QuantModelHelper = MODEL_HELPER_REGISTRY['quant']
