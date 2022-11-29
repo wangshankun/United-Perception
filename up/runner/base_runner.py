@@ -256,11 +256,13 @@ class BaseRunner(object):
             _cfg_saver['kwargs']['work_dir'] = self.work_dir
             saver = SAVER_REGISTRY.build(_cfg_saver)
             self.results_dir = cfg_saver.get('results_dir', 'results_dir')
+            self.save_dir = cfg_saver.get('save_dir', 'save_dir')
         else:
             cfg_saver['kwargs']['yml_path'] = self.args.get('config_path', None)
             cfg_saver['kwargs']['work_dir'] = self.work_dir
             saver = SAVER_REGISTRY.build(cfg_saver)
             self.results_dir = cfg_saver['kwargs']['save_cfg'].get('results_dir', 'results_dir')
+            self.save_dir = cfg_saver['kwargs']['save_cfg'].get('save_dir', 'save_dir')
         self.saver = saver
 
     def get_git_version(self):

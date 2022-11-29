@@ -9,6 +9,7 @@ from mqbench.utils.state import enable_quantization, enable_calibration_woquanti
 from torch.nn.parallel import DistributedDataParallel as DDP
 from up.utils.general.global_flag import DEPLOY_FLAG
 import torch
+import os
 
 __all__ = ['QuantRunner']
 
@@ -74,11 +75,22 @@ class QuantRunner(BaseRunner):
             else:
                 mod = getattr(self.model, mname)
             print('{}/{} model will be exported.'.format(index + 1, len(self.model_list)))
-            print('Model name is : ', mname)
 
-            if len(prefix_name) != 0:##default using save original fp32 model
-                mname = prefix_name + mname
+            if prefix_name == "fp32_":##default using save original fp32 model
+                try:
+                    model_name = self.config['deploy']['model_name']
+                    if len(model_name) != 0:
+                        mname = model_name
+                except:
+                    print(self.config['deploy']['model_name'])
+                    mname = prefix_name + mname
+                print('Exported Model name is : ', mname)
+
+                if not os.path.exists(self.save_dir):
+                    os.makedirs(self.save_dir)
+
                 model_file = mname + ".onnx"
+                model_file = self.save_dir + "/" + model_file
                 torch.onnx.export(mod, batch, model_file,
                                   do_constant_folding=True,
                                   export_params=True,
@@ -90,10 +102,19 @@ class QuantRunner(BaseRunner):
                 onnx_model = onnx.load(model_file)
                 onnx.save(onnx.shape_inference.infer_shapes(onnx_model), model_file)
             else:
+                try:
+                    quant_model_name = self.config['deploy']['quant_model_name']
+                    if len(quant_model_name) != 0:
+                        mname = quant_model_name
+                except:
+                    print(self.config['deploy']['quant_model_name'])
+                    pass
+                print('Exported Model name is : ', mname)
                 convert_deploy(model=mod,
                                backend_type=self.backend_type[deploy_backend],
                                dummy_input=self.dummy_input,
-                               model_name=mname)
+                               model_name=mname,
+                               output_path=self.save_dir)
 
     def build_model(self):
         QuantModelHelper = MODEL_HELPER_REGISTRY['quant']
