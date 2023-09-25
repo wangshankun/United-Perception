@@ -10,9 +10,32 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from up.utils.general.global_flag import DEPLOY_FLAG
 import torch
 import os
+import onnx
+import onnxruntime
+
+import inspect
+
+def printf(*args):
+    cur_frame = inspect.currentframe()
+    cal_frame = cur_frame.f_back # 调用者的栈帧
+
+    message = " ".join(map(str, args))
+    print(f"{cal_frame.f_code.co_name}:{cal_frame.f_lineno}==== {message}")
+
 
 __all__ = ['QuantRunner']
 
+
+class HookManager:
+    def __init__(self):
+        self.arg1 = None
+    def fuc(self, module, input, output):
+        #print(f"Module: {module}")
+        #print(f"Input: {input}")
+        #print(f"Original Output: {output}")
+        new_output = torch.from_numpy(self.arg1).float().cuda()
+        output.copy_(new_output)
+        #print(f"Modified Output: {output}")
 
 @RUNNER_REGISTRY.register("quant")
 class QuantRunner(BaseRunner):
@@ -56,11 +79,10 @@ class QuantRunner(BaseRunner):
         self.build_hooks()
 
         batch = self.get_batch('test')
-
-        #dummy_input = torch.ones((1, 3, 300,300)).to(device='cuda')
-        #batch['image'] = dummy_input #change input shape
-
+        #get_batch将输入hw自动padding成32的整数倍，从300*300变成320*320
         output = self.model(batch)
+        #dummy_input = torch.ones((1, 3, 300,300)).to(device=output['image'].device)
+        #output['image'] = dummy_input
         self.dummy_input = {k: v for k, v in output.items() if torch.is_tensor(v)}
         DEPLOY_FLAG.flag = True
 
@@ -84,7 +106,7 @@ class QuantRunner(BaseRunner):
                 except:
                     print(self.config['deploy']['model_name'])
                     mname = prefix_name + mname
-                print('Exported Model name is : ', mname)
+                printf('Exported Model name is : ', mname)
 
                 if not os.path.exists(self.save_dir):
                     os.makedirs(self.save_dir)
@@ -108,8 +130,9 @@ class QuantRunner(BaseRunner):
                         mname = quant_model_name
                 except:
                     print(self.config['deploy']['quant_model_name'])
+                    mname = prefix_name + mname
                     pass
-                print('Exported Model name is : ', mname)
+                printf('Exported Model name is : ', mname)
                 convert_deploy(model=mod,
                                backend_type=self.backend_type[deploy_backend],
                                dummy_input=self.dummy_input,
@@ -159,7 +182,8 @@ class QuantRunner(BaseRunner):
         return {'tensorrt': BackendType.Tensorrt,
                 'snpe': BackendType.SNPE,
                 'vitis': BackendType.Vitis,
-                'academic': BackendType.Academic}
+                'academic': BackendType.Academic,
+                'onnx_qnn': BackendType.ONNX_QNN,}
 
     @property
     def quant_type(self):
@@ -273,7 +297,7 @@ class QuantRunner(BaseRunner):
                     tensor.data = tensor.data / get_world_size()
                     allreduce(tensor.data)
                     reduced.append(n)
-        logger.info(f'sync quant params: {reduced}.')
+        #logger.info(f'sync quant params: {reduced}.')
 
     def eval_quant(self):
         self.model.eval()
@@ -349,8 +373,10 @@ class QuantRunner(BaseRunner):
         from mqbench.advanced_ptq import ptq_reconstruction
         from easydict import EasyDict
         self.model.train()
-        #self.model = ptq_reconstruction(self.model, cali_data, EasyDict(self.config['quant']['ptq']), self.model_list)
-        self.model = ptq_reconstruction(self.model.module, cali_data, EasyDict(self.config['quant']['ptq']), self.model_list)
+        if get_world_size() > 1:
+            self.model = ptq_reconstruction(self.model.module, cali_data, EasyDict(self.config['quant']['ptq']), self.model_list)
+        else:
+            self.model = ptq_reconstruction(self.model, cali_data, EasyDict(self.config['quant']['ptq']), self.model_list)
         self.save_ptq()
         self.eval_quant()
         self.deploy()

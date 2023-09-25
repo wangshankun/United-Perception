@@ -393,6 +393,8 @@ class BaseRunner(object):
         if self.memory_friendly_infer:
             writer = self._prepare_writer()
         for _ in range(test_loader.get_epoch_size()):
+        #for _ in range(100):#只测试100张看下结果
+        #for _ in range(1):#测一张做golden数据
             batch = self.get_batch('test')
             output = self.forward_eval(batch)
             dump_results = test_loader.dataset.dump(output)
