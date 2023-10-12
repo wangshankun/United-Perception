@@ -126,6 +126,7 @@ class BaseDataset(Dataset):
         Arguments:
             - res_file (:obj:`str`): filename
         """
+        print("=================self.evaluator.eval===============")
         metrics = self.evaluator.eval(res_file, res) if self.evaluator else {}
         return metrics
 

@@ -32,12 +32,37 @@ from up.utils.general.global_flag import (
 )
 from up.utils.env.analysis_utils import get_memory_info
 
+import os
+import numpy as np
+import onnx
+import collections
+from collections import OrderedDict
+
+import torch.nn.functional as F
+
+import inspect
+
+def printf(*args):
+    cur_frame = inspect.currentframe()
+    cal_frame = cur_frame.f_back # 调用者的栈帧
+
+    message = " ".join(map(str, args))
+    print(f"{cal_frame.f_code.co_name}:{cal_frame.f_lineno}==== {message}")
+
+
 __all__ = ['BaseRunner']
+
+
+def trim_array(arr, tail_pad_len):
+    if tail_pad_len <= 0:
+        return arr
+    return arr[:-max(min(tail_pad_len, len(arr)), 0)]
 
 
 @RUNNER_REGISTRY.register('base')
 class BaseRunner(object):
     def __init__(self, config, work_dir='./', training=True):
+        self.onnx_run = False
         self.args = config.get('args', {})
         self.backend = self.args.get('backend', 'dist')
         self.work_dir = work_dir
@@ -387,14 +412,15 @@ class BaseRunner(object):
 
     @torch.no_grad()
     def _inference(self):
-        self.model.cuda().eval()
+        if self.onnx_run == False:
+            self.model.cuda().eval()
         test_loader = self.data_loaders['test']
         all_results_list = []
         if self.memory_friendly_infer:
             writer = self._prepare_writer()
         for _ in range(test_loader.get_epoch_size()):
-        #for _ in range(100):#ֻ����100�ſ��½��
-        #for _ in range(1):#��һ����golden����
+        #for _ in range(100):#只测试100张看下结果
+        #for _ in range(1):#测一张做golden数据
             batch = self.get_batch('test')
             output = self.forward_eval(batch)
             dump_results = test_loader.dataset.dump(output)
@@ -554,7 +580,7 @@ class BaseRunner(object):
 
     def forward_eval(self, batch):
         self._hooks('before_eval_forward', self.local_eval_iter(), batch)
-        assert not self.model.training
+        #assert not self.model.training
         output = self.forward_model(batch)
         self._hooks('after_eval_forward', self.local_eval_iter(), output)
         return output
@@ -673,7 +699,7 @@ class BaseRunner(object):
         return {'scaler': self.scaler.state_dict()}
 
     def get_dump_dict(self):
-        model_dict = self.model.state_dict()
+        model_dict = self.model
         dump_dict = {
             'epoch': self.cur_epoch(),
             'iter': self.cur_iter,
@@ -690,7 +716,165 @@ class BaseRunner(object):
     def forward_model(self, batch):
         if self.ema is not None and not self.model.training:
             return self.ema.model(batch)
-        return self.model(batch)
+
+        '''
+        # # 打印所有子模块的名称和结构
+        # for name, module in self.model.named_modules():
+        #     print(f"Name: {name}")
+        #     print(f"Module: {module}")
+        #     print("----------")
+        # xxx
+        
+        input_name = self.onnx_model.get_inputs()[0].name
+        img = batch['image'].cpu().numpy()
+
+        outputs = [x.name for x in self.onnx_model.get_outputs()]
+        onnx_result = self.onnx_model.run(outputs, {input_name: img})
+
+        print(batch['image_info'], batch['image_id'])
+        #onnx_dump_res = OrderedDict(zip(outputs, onnx_result))
+        
+        # dir_path = f"/root/work/United-Perception/verfiy_data_{batch['image_id'][0]}/"
+        # isExists=os.path.exists(dir_path) #判断路径是否存在，存在则返回true
+        # if not isExists:
+        #     os.makedirs(dir_path)
+        # for (x, y) in onnx_dump_res.items():
+        #     file_path = dir_path + f"{x}.npy"
+        #     np.save(file_path, y)
+        # #xxx
+
+        # dir_path = f"/root/work/United-Perception/verfiy_data/"
+        # isExists=os.path.exists(dir_path) #判断路径是否存在，存在则返回true
+        # if not isExists:
+        #     os.makedirs(dir_path)
+        # for (x, y) in onnx_dump_res.items():
+        #     if x == "1082_QuantizeLinear":
+        #         file_path = dir_path + f"{batch['image_id'][0]}_{x}.npy"
+        #         np.save(file_path, y)
+        #xxx
+
+       
+        print("数据类型：",type(onnx_result[0]))
+        print("数组元素数据类型：",onnx_result[0].dtype) 
+
+        onnx_result = [torch.from_numpy(arr).float().cuda() for arr in onnx_result]
+
+        self.cls_0_hook.arg1 = onnx_result[0]#np.zeros_like(onnx_result[0])#
+        self.loc_0_hook.arg1 = onnx_result[1]
+        self.cls_1_hook.arg1 = onnx_result[2]
+        self.loc_1_hook.arg1 = onnx_result[3]
+        self.cls_2_hook.arg1 = onnx_result[4]
+        self.loc_2_hook.arg1 = onnx_result[5]
+        self.cls_3_hook.arg1 = onnx_result[6]
+        self.loc_3_hook.arg1 = onnx_result[7]
+        self.cls_4_hook.arg1 = onnx_result[8]
+        self.loc_4_hook.arg1 = onnx_result[9]
+        self.cls_5_hook.arg1 = onnx_result[10]#np.zeros_like(onnx_result[10])#
+        self.loc_5_hook.arg1 = onnx_result[11]#np.zeros_like(onnx_result[11])#
+        '''
+        #'''
+        from functools import reduce
+        shapes = [#nchw格式
+            (1, 324, 40, 40),
+            (1, 16, 40, 40),
+            (1, 486, 20, 20),
+            (1, 24, 20, 20),
+            (1, 486, 10, 10),
+            (1, 24, 10, 10),
+            (1, 486, 5, 5),
+            (1, 24, 5, 5),
+            (1, 324, 3, 3),
+            (1, 16, 3, 3),
+            (1, 324, 1, 1),
+            (1, 16, 1, 1)
+        ]
+
+        shapes_c32 = []
+        for shape in shapes:
+            # 计算第二个维度需要补充为32的整数倍的值
+            new_dim = ((shape[1] - 1) // 32 + 1) * 32
+            new_shape = (shape[0], new_dim, shape[2], shape[3])
+            shapes_c32.append(new_shape)
+            
+        scales = [
+            0.07284165173768997,
+            0.008728246204555035,
+            0.06005214899778366,
+            0.007245888467878103,
+            0.051795948296785355,
+            0.006172922905534506,
+            0.045261189341545105,
+            0.005681471433490515,
+            0.03891662508249283,
+            0.004207220394164324,
+            0.023309217765927315,
+            0.0036714202724397182]
+        
+        bmc_results = []
+        for x in range(12):
+            fname = f"/root/ssd18_gordian_5000/{batch['image_id'][0]}_{x}.bin"
+            sp = shapes[x]
+            s_len = reduce(lambda x, y: x * y, shapes_c32[x])
+            ld_arr = np.fromfile(fname, dtype=np.int8)#nhwc格式
+            ld_arr = np.ascontiguousarray(ld_arr)
+            tail_pad_len = len(ld_arr) - s_len
+            ld_arr = trim_array(ld_arr, tail_pad_len)
+
+            ld_arr = ld_arr.reshape(sp[-2], sp[-1], -1)
+
+            ld_arr = ld_arr[:,:,:sp[1]]
+            ld_arr = ld_arr[np.newaxis]
+
+            ld_arr = np.transpose(ld_arr, (0, 3, 1, 2))#转成nchw
+
+            ld_arr = ld_arr * scales[x]
+            ld_arr = ld_arr.astype(np.float32)
+            ld_arr = np.ascontiguousarray(ld_arr)
+
+            bmc_results.append(ld_arr)
+
+
+        #bmc_results = [torch.from_numpy(arr).float().cuda() for arr in bmc_results]
+
+        self.cls_0_hook.arg1 = bmc_results[0]
+        self.loc_0_hook.arg1 = bmc_results[1]
+        self.cls_1_hook.arg1 = bmc_results[2]
+        self.loc_1_hook.arg1 = bmc_results[3]
+        self.cls_2_hook.arg1 = bmc_results[4]
+        self.loc_2_hook.arg1 = bmc_results[5]
+        self.cls_3_hook.arg1 = bmc_results[6]
+        self.loc_3_hook.arg1 = bmc_results[7]
+        self.cls_4_hook.arg1 = bmc_results[8]
+        self.loc_4_hook.arg1 = bmc_results[9]
+        self.cls_5_hook.arg1 = bmc_results[10]
+        self.loc_5_hook.arg1 = bmc_results[11]
+
+        '''
+        #printf(onnx_result[11])
+        #printf(bmc_results[11]/scales[11])
+        for i in range(12):
+            a = torch.from_numpy(onnx_result[x]).float().cuda()
+            b = torch.from_numpy(bmc_results[x]).float().cuda()
+            print(torch.allclose(a, b, atol=1e-3)) 
+
+            if (np.allclose(onnx_result[x], bmc_results[x], atol=5e-2)) == False:
+                printf(x)
+                printf(np.around(onnx_result[x]/scales[x]))
+                printf(np.around(bmc_results[x]/scales[x]))
+                xxx
+                # a = torch.from_numpy(onnx_result[x]).float()
+                # b = torch.from_numpy(bmc_results[x]).float()
+
+                # cos_sim = F.cosine_similarity(a.view(-1), b.view(-1), 0).item()
+                # printf(cos_sim)
+                # if cos_sim < 0.9:
+                #     printf(x)
+                #     printf(np.around(onnx_result[x]/scales[x]))
+                #     printf(np.around(bmc_results[x]/scales[x]))
+                #     xxx
+        '''
+        result = self.model(batch)
+        return result
 
     def forward(self, batch, return_output=False):
         if self.backend == 'dist' and self.fp16:
