@@ -44,7 +44,6 @@ class QuantDeploy(QuantRunner):
         from mqbench.convert_deploy import convert_deploy
         deploy_backend = self.config['quant']['deploy_backend']
         self.model.cuda().eval()
-        print('ONNX input shape is: ', self.dummy_input['image'].shape)
 
         for index, mname in enumerate(self.model_list):
             mod = getattr(self.model, mname)

@@ -17,7 +17,7 @@ import inspect
 
 def printf(*args):
     cur_frame = inspect.currentframe()
-    cal_frame = cur_frame.f_back # µ÷ÓÃÕßµÄÕ»Ö¡
+    cal_frame = cur_frame.f_back # è°ƒç”¨è€…çš„æ ˆå¸§
 
     message = " ".join(map(str, args))
     print(f"{cal_frame.f_code.co_name}:{cal_frame.f_lineno}==== {message}")
@@ -32,9 +32,11 @@ class HookManager:
     def fuc(self, module, input, output):
         #print(f"Module: {module}")
         #print(f"Input: {input}")
-        #print(f"Original Output: {output}")
+        #print(f"Original Output shape: {output.shape}")
         new_output = torch.from_numpy(self.arg1).float().cuda()
         output.copy_(new_output)
+        #print(f"self.arg1: {self.arg1}")
+        #output.copy_(self.arg1)
         #print(f"Modified Output: {output}")
 
 @RUNNER_REGISTRY.register("quant")
@@ -57,12 +59,14 @@ class QuantRunner(BaseRunner):
             self.resume_model_from_fp()
             self.deploy("fp32_")
             self.quantize_model()
+            printf("=======Finish quant model============")
             self.build_trainer()
             self.resume_model_from_quant()
             if self.do_calib:
                 self.calibrate()
         else:
             self.quantize_model()
+            printf("=======Finish quant model============")
             self.resume_model_from_quant()
             enable_quantization(self.model)
         self.prepare_dist_model()
@@ -79,7 +83,7 @@ class QuantRunner(BaseRunner):
         self.build_hooks()
 
         batch = self.get_batch('test')
-        #get_batch½«ÊäÈëhw×Ô¶¯padding³É32µÄÕûÊý±¶£¬´Ó300*300±ä³É320*320
+        #get_batchå°†è¾“å…¥hwè‡ªåŠ¨paddingæˆ32çš„æ•´æ•°å€ï¼Œä»Ž300*300å˜æˆ320*320
         output = self.model(batch)
         #dummy_input = torch.ones((1, 3, 300,300)).to(device=output['image'].device)
         #output['image'] = dummy_input
@@ -300,7 +304,8 @@ class QuantRunner(BaseRunner):
         #logger.info(f'sync quant params: {reduced}.')
 
     def eval_quant(self):
-        self.model.eval()
+        if self.onnx_run == False:
+            self.model.eval()
         self.evaluate()
 
     def save_calib(self):
@@ -372,14 +377,67 @@ class QuantRunner(BaseRunner):
             cali_data.append(batch)
         from mqbench.advanced_ptq import ptq_reconstruction
         from easydict import EasyDict
-        self.model.train()
-        if get_world_size() > 1:
-            self.model = ptq_reconstruction(self.model.module, cali_data, EasyDict(self.config['quant']['ptq']), self.model_list)
-        else:
-            self.model = ptq_reconstruction(self.model, cali_data, EasyDict(self.config['quant']['ptq']), self.model_list)
-        self.save_ptq()
+        # self.model.train()
+        # if get_world_size() > 1:
+        #     self.model = ptq_reconstruction(self.model.module, cali_data, EasyDict(self.config['quant']['ptq']), self.model_list)
+        # else:
+        #     self.model = ptq_reconstruction(self.model, cali_data, EasyDict(self.config['quant']['ptq']), self.model_list)
+        # self.save_ptq()
+        # self.model = torch.save(self.model, "./ssd-res18-8bit-tensor-sy.pth")
+        self.model = torch.load("./ssd-res18-8bit-tensor-sy.pth")
+        #self.onnx_model = onnxruntime.InferenceSession("/root/work/United-Perception/ssd-r18-onnxqnn_deploy.onnx")
+        onnx_model_f = onnx.load("/root/work/United-Perception/ssd-r18-onnxqnn_deploy_scale_align.onnx")
+
+        # #self.model = torch.save(self.model, "/root/save_dir/ret34_quant/ptq_model.pth")
+        # self.model = torch.load("/root/work/United-Perception_clean/ssd-res34-org-8bit-tensor-sy.pth")
+        # #printf(self.model)
+        # #xxx
+        # #onnx_model_f = onnx.load("/root/save_dir/ret34_org_quant/ssd-r34-org-onnxqnn_deploy.onnx")
+        # onnx_model_f = onnx.load("/root/work/United-Perception_clean/ssd-r34-org-onnxqnn_deploy_scale_align.onnx")
+        for node in onnx_model_f.graph.node:
+            for output in node.output:
+                onnx_model_f.graph.output.extend([onnx.ValueInfoProto(name=output)])
+
+        self.onnx_model = onnxruntime.InferenceSession(onnx_model_f.SerializeToString())
+
+        self.cls_0_hook = HookManager()
+        self.cls_1_hook = HookManager()
+        self.cls_2_hook = HookManager()
+        self.cls_3_hook = HookManager()
+        self.cls_4_hook = HookManager()
+        self.cls_5_hook = HookManager()
+        self.loc_0_hook = HookManager()
+        self.loc_1_hook = HookManager()
+        self.loc_2_hook = HookManager()
+        self.loc_3_hook = HookManager()
+        self.loc_4_hook = HookManager()
+        self.loc_5_hook = HookManager()
+
+        self.model.backbone_neck_roi_head.roi_head_conv_cls_0_post_act_fake_quantizer.register_forward_hook(self.cls_0_hook.fuc)
+        self.model.backbone_neck_roi_head.roi_head_conv_cls_1_post_act_fake_quantizer.register_forward_hook(self.cls_1_hook.fuc)
+        self.model.backbone_neck_roi_head.roi_head_conv_cls_2_post_act_fake_quantizer.register_forward_hook(self.cls_2_hook.fuc)
+        self.model.backbone_neck_roi_head.roi_head_conv_cls_3_post_act_fake_quantizer.register_forward_hook(self.cls_3_hook.fuc)
+        self.model.backbone_neck_roi_head.roi_head_conv_cls_4_post_act_fake_quantizer.register_forward_hook(self.cls_4_hook.fuc)
+        self.model.backbone_neck_roi_head.roi_head_conv_cls_5_post_act_fake_quantizer.register_forward_hook(self.cls_5_hook.fuc)
+        self.model.backbone_neck_roi_head.roi_head_conv_loc_0_post_act_fake_quantizer.register_forward_hook(self.loc_0_hook.fuc)
+        self.model.backbone_neck_roi_head.roi_head_conv_loc_1_post_act_fake_quantizer.register_forward_hook(self.loc_1_hook.fuc)
+        self.model.backbone_neck_roi_head.roi_head_conv_loc_2_post_act_fake_quantizer.register_forward_hook(self.loc_2_hook.fuc)
+        self.model.backbone_neck_roi_head.roi_head_conv_loc_3_post_act_fake_quantizer.register_forward_hook(self.loc_3_hook.fuc)
+        self.model.backbone_neck_roi_head.roi_head_conv_loc_4_post_act_fake_quantizer.register_forward_hook(self.loc_4_hook.fuc)
+        self.model.backbone_neck_roi_head.roi_head_conv_loc_5_post_act_fake_quantizer.register_forward_hook(self.loc_5_hook.fuc)
+
         self.eval_quant()
-        self.deploy()
+        xxx
+        #self.deploy()
+
+    def onnxruntime_eval(self):
+        cfg_saver = self.config['saver']
+        cfg_saver['onnx_model']
+        
+        self.model = onnxruntime.InferenceSession(cfg_saver['onnx_model'])
+        self.onnx_run = True
+        #self.model = torch.load("./ssd-res18-8bit-tensor-sy.pth")
+        self.eval_quant()
 
     def train(self):
         if self.quant_type == 'calib_only':
@@ -388,5 +446,7 @@ class QuantRunner(BaseRunner):
             self.train_qat()
         elif self.quant_type == 'ptq':
             self.train_ptq()
+        elif self.quant_type == 'onnxruntime':
+            self.onnxruntime_eval()
         else:
             raise NotImplementedError('Not supported quant training method.')
